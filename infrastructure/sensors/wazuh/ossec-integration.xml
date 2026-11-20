@@ -1,0 +1,8 @@
+<!-- Add inside <ossec_config> on the Wazuh manager. Replace the key with the ingest key of your Wazuh log source. -->
+<integration>
+  <name>custom-cyberrange</name>
+  <hook_url>http://CYBER-RANGE-HOST:8080/api/v1/soc/ingest</hook_url>
+  <api_key>REPLACE_WITH_INGEST_KEY</api_key>
+  <level>3</level>
+  <alert_format>json</alert_format>
+</integration>

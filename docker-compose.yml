@@ -1,0 +1,257 @@
+# CYBER RANGE Local: single-user edition for your own computer.
+#   cp .env.example .env && ./scripts/init-env.sh   (generates secrets, never printed)
+#   docker compose up -d --build
+#   open http://localhost:8080   (no login: the app opens as the local operator; reachable only from this computer)
+# Profiles (COMPOSE_PROFILES in .env, comma separated; .env.example enables "lab"):
+#   lab      lab-worker + terminal-gateway (Docker labs and brokered lab terminals; need the Docker socket)
+#   demo     one-shot loader of clearly labelled DEMO data (docker compose --profile demo run --rm demo-seed)
+#   dev      Vite dev server with hot reload on :5173 (frontend-dev) next to the production nginx
+#   sensors  Suricata + Zeek on the host interface ${SENSOR_INTERFACE} and shippers into the SOC ingest API
+name: cyber-range
+
+x-backend-env: &backend-env
+  CR_ENVIRONMENT: ${CR_ENVIRONMENT:-development}
+  CR_MYSQL_HOST: mysql
+  CR_MYSQL_PORT: "3306"
+  CR_MYSQL_USER: ${MYSQL_USER:-cyber_range}
+  CR_MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+  CR_MYSQL_DATABASE: ${MYSQL_DATABASE:-cyber_range}
+  CR_REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env (run scripts/init-env.sh)}@redis:6379/0
+  CR_JWT_SECRET: ${CR_JWT_SECRET:?set CR_JWT_SECRET in .env}
+  CR_COOKIE_SECURE: ${CR_COOKIE_SECURE:-false}
+  CR_TRUST_PROXY_HEADERS: "true"
+  CR_CORS_ORIGINS: '["http://localhost:8080"]'
+  # Local session: allowed hosts and the optional local access token (see .env.example)
+  CR_LOCAL_ALLOWED_HOSTS: ${CR_LOCAL_ALLOWED_HOSTS:-localhost,127.0.0.1,::1}
+  CR_LOCAL_ACCESS_TOKEN: ${CR_LOCAL_ACCESS_TOKEN:-}
+  # Samples, evidence and exports live in the artifact_data volume
+  CR_STORAGE_ADAPTER: filesystem
+  # Threat-intel feeds: secrets live only here (never in the DB/UI); a feed refers to the variable by name
+  CR_FEED_MISP_KEY: ${CR_FEED_MISP_KEY:-}
+  CR_FEED_TAXII_TOKEN: ${CR_FEED_TAXII_TOKEN:-}
+  CR_FEED_KEY_1: ${CR_FEED_KEY_1:-}
+  CR_FEED_KEY_2: ${CR_FEED_KEY_2:-}
+  CR_INTEL_FEED_ALLOW_PRIVATE: ${CR_INTEL_FEED_ALLOW_PRIVATE:-false}
+  # Offline GeoIP (operator-supplied MaxMind GeoLite2-City.mmdb in ./storage/geoip)
+  CR_GEOIP_DB: /var/lib/cyber-range/geoip/GeoLite2-City.mmdb
+  # VM nodes: none | libvirt | proxmox. See VM-WINDOWS.md in the repo root
+  CR_VM_PROVIDER: ${CR_VM_PROVIDER:-none}
+  CR_LIBVIRT_URI: ${CR_LIBVIRT_URI:-qemu:///system}
+  CR_LIBVIRT_IMAGES: ${CR_LIBVIRT_IMAGES:-}
+  CR_LIBVIRT_IMAGE_DIR: /var/lib/cyber-range/vm-images
+  CR_LIBVIRT_DISK_DIR: ${CR_LIBVIRT_DISK_DIR:-/var/lib/cyber-range/vm-disks}
+  CR_PROXMOX_URL: ${CR_PROXMOX_URL:-}
+  CR_PROXMOX_NODE: ${CR_PROXMOX_NODE:-}
+  CR_PROXMOX_TOKEN_ID: ${CR_PROXMOX_TOKEN_ID:-}
+  CR_PROXMOX_TOKEN_SECRET: ${CR_PROXMOX_TOKEN_SECRET:-}
+  CR_PROXMOX_VERIFY_TLS: ${CR_PROXMOX_VERIFY_TLS:-true}
+  CR_PROXMOX_POOL: ${CR_PROXMOX_POOL:-cyber-range}
+  CR_PROXMOX_BRIDGE: ${CR_PROXMOX_BRIDGE:-}
+  CR_PROXMOX_VLAN_RANGE: ${CR_PROXMOX_VLAN_RANGE:-}
+  CR_PROXMOX_VMID_RANGE: ${CR_PROXMOX_VMID_RANGE:-9000-9999}
+  CR_PROXMOX_STORAGE: ${CR_PROXMOX_STORAGE:-}
+  CR_PROXMOX_TEMPLATES: ${CR_PROXMOX_TEMPLATES:-}
+  CR_STORAGE_DIR: /var/lib/cyber-range/storage
+  # Dynamic malware analysis only in an EXTERNAL isolated sandbox (CAPEv2). none = disabled.
+  CR_SANDBOX_PROVIDER: ${CR_SANDBOX_PROVIDER:-none}
+  CR_SANDBOX_URL: ${CR_SANDBOX_URL:-}
+  CR_SANDBOX_TOKEN: ${CR_SANDBOX_TOKEN:-}
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-cyber_range}
+      MYSQL_USER: ${MYSQL_USER:-cyber_range}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./infrastructure/mysql/conf.d:/etc/mysql/conf.d:ro
+      - ./infrastructure/mysql/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${MYSQL_HOST_PORT:-3306}:3306"   # loopback only, for tests/backups
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [data_plane]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env (run scripts/init-env.sh)}
+    # Password from .env (generated per computer). Redis is only on the internal data plane and loopback.
+    command: ["sh", "-c", "exec redis-server --save '' --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass \"$$REDIS_PASSWORD\""]
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      retries: 20
+    networks: [data_plane]
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    volumes: [artifact_data:/var/lib/cyber-range/storage, ./storage/geoip:/var/lib/cyber-range/geoip:ro]
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready',timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks: [control_plane, data_plane]
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["celery", "-A", "app.core.celery_app", "worker", "-Q", "celery,maintenance,analysis,reports", "-n", "worker@%h", "--loglevel=INFO", "--concurrency=2"]
+    environment: *backend-env
+    volumes: [artifact_data:/var/lib/cyber-range/storage]
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [data_plane]
+
+  # The only service that talks to the Docker engine. It has no published ports and sits on the data plane only.
+  # Access to the Docker socket is root-equivalent on the host: keep this service on a dedicated lab host in production.
+  lab-worker:
+    profiles: ["lab"]
+    build: ./backend
+    restart: unless-stopped
+    command: ["celery", "-A", "app.core.celery_app", "worker", "-Q", "lab", "-n", "lab@%h", "--loglevel=INFO", "--concurrency=2"]
+    environment:
+      <<: *backend-env
+      CR_LAB_DRIVER: docker
+    group_add: ["${DOCKER_GID:-999}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [data_plane]
+
+  # Brokered terminals into lab containers only (see app/terminal/gateway.py). Reachable solely through the
+  # frontend reverse proxy at /terminal/ws; it never offers a host shell and re-checks container labels per session.
+  terminal-gateway:
+    profiles: ["lab"]
+    build: ./backend
+    restart: unless-stopped
+    command: ["uvicorn", "app.terminal.gateway:app", "--host", "0.0.0.0", "--port", "8100", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    environment: *backend-env
+    group_add: ["${DOCKER_GID:-999}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - artifact_data:/var/lib/cyber-range/storage
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [control_plane, data_plane]
+
+  demo-seed:
+    profiles: ["demo"]
+    build: ./backend
+    restart: "no"
+    command: ["python", "-m", "app.cli", "demo"]
+    environment: *backend-env
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [data_plane]
+
+  frontend-dev:
+    profiles: ["dev"]
+    image: node:22-alpine
+    working_dir: /src
+    command: ["sh", "-c", "npm ci --no-audit --no-fund && npx vite --host 0.0.0.0"]
+    environment:
+      CR_API_URL: http://backend:8000
+      CR_TERMINAL_URL: http://terminal-gateway:8100
+    volumes: ["./frontend:/src", "frontend_dev_modules:/src/node_modules"]
+    ports: ["127.0.0.1:5173:5173"]
+    networks: [control_plane]
+
+  # Office lab image (domain controller, intranet portal, employee workstation) used by the "Kantor dengan Active Directory"
+  # template. Build-only: start.bat/start.sh run `docker compose --profile lab-images build lab-office`; the lab worker
+  # starts the containers itself inside isolated lab networks.
+  lab-office:
+    profiles: ["lab-images"]
+    image: cyber-range/lab-office:1.0
+    build:
+      context: ./lab-images/office
+      additional_contexts:
+        cr: ./backend/app/cyber_range/office_lab
+      tags: ["cyber-range/lab-dc:1.0", "cyber-range/lab-portal:1.0", "cyber-range/lab-ws:1.0"]
+    command: ["true"]
+    network_mode: none
+
+  # ---- sensors profile: network telemetry from the host interface into the SOC ingest API ----
+  # Register two log sources in Defense Center (Suricata EVE, Zeek), save their downloaded shipper configs as
+  # infrastructure/sensors/suricata.env and infrastructure/sensors/zeek.env, then: docker compose --profile sensors up -d
+  suricata:
+    profiles: ["sensors"]
+    image: jasonish/suricata:7.0.8
+    restart: unless-stopped
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW, SYS_NICE]
+    command: ["-i", "${SENSOR_INTERFACE:-eth0}"]
+    volumes: ["sensor_logs:/var/log/suricata"]
+
+  zeek:
+    profiles: ["sensors"]
+    image: zeek/zeek:7.0.5
+    restart: unless-stopped
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW]
+    working_dir: /logs/zeek
+    command: ["sh", "-c", "mkdir -p /logs/zeek && cd /logs/zeek && exec zeek -C -i ${SENSOR_INTERFACE:-eth0} local LogAscii::use_json=T"]
+    volumes: ["sensor_logs:/logs"]
+
+  sensor-shipper:
+    profiles: ["sensors"]
+    image: python:3.13-alpine
+    restart: unless-stopped
+    command: ["sh", "/infra/ship-sensors.sh"]
+    environment:
+      ZEEK_LOGS: conn dns http ssl ssh notice files weird
+    volumes:
+      - ./scripts/ship-logs.py:/infra/ship-logs.py:ro
+      - ./infrastructure/sensors:/infra/sensors:ro
+      - ./infrastructure/sensors/ship-sensors.sh:/infra/ship-sensors.sh:ro
+      - sensor_logs:/logs:ro
+    depends_on: [suricata, zeek]
+    networks: [control_plane]
+
+  beat:
+    build: ./backend
+    restart: unless-stopped
+    command: ["celery", "-A", "app.core.celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    environment: *backend-env
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [data_plane]
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-8080}:8080"   # this computer only (vm/ sets 0.0.0.0 inside its VM)
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [control_plane]
+
+networks:
+  control_plane: {}          # browser-facing: frontend <-> API
+  data_plane: { internal: false }  # API/workers <-> MySQL/Redis (set internal: true in hardened deployments)
+  # lab_plane networks are created per-lab by the cyber engine (Phase 3) with default-deny egress.
+
+volumes:
+  mysql_data: {}
+  artifact_data: {}
+  sensor_logs: {}       # Suricata EVE + Zeek JSON logs (sensors profile)
+  frontend_dev_modules: {}   # quarantine (neutralised samples) and evidence objects when CR_STORAGE_ADAPTER=filesystem

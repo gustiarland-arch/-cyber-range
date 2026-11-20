@@ -1,0 +1,88 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* CYBER RANGE design tokens — Hybrid SOC Enterprise + 3D Cyber Range */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  --color-ink-950: #080f1c; /* Midnight Navy (spec) */
+  --color-ink-900: #111d30; /* Panel Navy (spec) */
+  --color-ink-850: #152236;
+  --color-ink-800: #19283d; /* Surface (spec) */
+  --color-ink-700: #22395a;
+  --color-ink-600: #2c4569;
+  --color-ink-500: #3a5478;
+  --color-ink-400: #6b84a6;
+  --color-ink-300: #9bb0cc;
+  --color-ink-200: #c9d6e8;
+  --color-ink-100: #e8eef7;
+
+  --color-accent-300: #67e8f9;
+  --color-accent-400: #22d3ee;
+  --color-accent-500: #06b6d4;
+  --color-accent-600: #0891b2;
+
+  --color-sev-critical: #f05262;
+  --color-sev-high: #fb923c;
+  --color-sev-medium: #facc15;
+  --color-sev-low: #38bdf8;
+  --color-sev-info: #94a3b8;
+
+  --color-ok: #22c58b;
+  --color-warn: #fbbf24;
+  --color-bad: #f05262;
+
+  --color-red-team: #f05262;
+  --color-blue-team: #3b9eff;
+  --color-electric: #258bff; /* Electric Blue: interaction (spec) */
+  --color-ai-300: #c4b5fd;
+  --color-ai-400: #a78bfa;
+  --color-ai-500: #8b5cf6;
+
+  --shadow-glow: 0 0 0 1px rgb(34 211 238 / 0.25), 0 0 24px -6px rgb(34 211 238 / 0.45);
+  --radius-panel: 0.75rem;
+}
+
+@layer base {
+  html, body, #app { height: 100%; }
+  body {
+    @apply bg-ink-950 text-ink-200 font-sans antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 85% -10%, rgb(34 211 238 / 0.07), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgb(59 130 246 / 0.06), transparent 60%);
+    background-attachment: fixed;
+  }
+  ::selection { background: rgb(34 211 238 / 0.3); }
+  * { scrollbar-width: thin; scrollbar-color: var(--color-ink-600) transparent; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+  }
+  :focus-visible { outline: 2px solid var(--color-accent-400); outline-offset: 2px; }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-[var(--radius-panel)] border border-ink-700/70 bg-ink-900/80 backdrop-blur-sm;
+  }
+  .panel-header { @apply flex items-center justify-between gap-3 border-b border-ink-700/60 px-4 py-3; }
+  .panel-title { @apply text-xs font-semibold uppercase tracking-[0.14em] text-ink-300; }
+  .field-label { @apply mb-1 block text-xs font-medium text-ink-300; }
+  .input {
+    @apply w-full rounded-md border border-ink-600 bg-ink-850 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-500
+      focus:border-accent-400 focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:opacity-50;
+  }
+  .grid-bg {
+    background-image: linear-gradient(rgb(34 211 238 / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(34 211 238 / 0.05) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .data-table { @apply w-full text-left text-sm; }
+  .data-table th { @apply border-b border-ink-700 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400; }
+  .data-table td { @apply border-b border-ink-800 px-3 py-2.5 align-middle; }
+  .data-table tbody tr { @apply transition-colors hover:bg-ink-800/60; }
+}
+
+/* Larger text for readability (toggle in the help menu). Tailwind sizes are rem-based, so everything scales. */
+html.text-large { font-size: 112.5%; }

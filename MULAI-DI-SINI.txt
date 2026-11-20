@@ -1,0 +1,32 @@
+CYBER RANGE (EDISI LOKAL) - CARA MENJALANKAN
+============================================
+
+Aplikasi simulasi dan eksperimen keamanan siber untuk satu pengguna di komputer sendiri.
+Semua lab berjalan di jaringan Docker yang terisolasi. Data contoh berlabel DEMO.
+
+Syarat: Docker Desktop (Windows/macOS) atau Docker Engine + Compose v2 (Linux), RAM kosong sekitar 4 GB.
+
+WINDOWS
+  1. Buka Docker Desktop dan tunggu sampai "Engine running".
+  2. Klik dua kali start.bat
+     - file .env dan semua secret dibuat otomatis (acak, khusus komputer Anda)
+     - port yang sudah dipakai aplikasi lain (mis. MySQL 3306) otomatis dipindah
+     - pertama kali build sekitar 5-15 menit, lalu browser terbuka sendiri
+  3. Tidak ada login. Aplikasi hanya bisa dibuka dari komputer ini (http://localhost:8080).
+  4. Untuk berhenti: klik dua kali stop.bat (data tetap tersimpan).
+
+LINUX / macOS
+  ./start.sh        (berhenti: docker compose down)
+
+DI DALAM VM (tanpa Docker di komputer utama)
+  Pasang Vagrant + VirtualBox, buka terminal di folder vm, jalankan: vagrant up
+  Lalu buka http://localhost:8080. Rincian: vm/README.md
+
+Catatan
+  - Image lab "Kantor dengan Active Directory" ikut dibangun saat start (sekali, beberapa menit).
+    Manual: docker compose --profile lab-images build lab-office
+  - Data contoh berlabel DEMO: docker compose --profile demo run --rm demo-seed
+  - Jangan membuka port aplikasi ke jaringan lain. Edisi ini tidak punya login.
+  - Modul belajar bergambar untuk pemula: docs/Modul-Cyber-Range-Edisi-Lokal.pdf
+  - Pakai hanya di lab milik sendiri. Baca PENGGUNAAN-ETIS.md.
+  - Jika gagal: kirim isi jendela start.bat atau hasil "docker compose logs backend".

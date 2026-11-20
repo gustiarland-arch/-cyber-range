@@ -1,0 +1,1 @@
+libvirt-python==12.9.0

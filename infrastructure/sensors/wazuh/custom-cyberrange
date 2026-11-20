@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+"""Wazuh integratord script: forwards each Wazuh alert to the CYBER RANGE SOC ingest API.
+
+Install on the Wazuh manager:
+  cp custom-cyberrange /var/ossec/integrations/ && chown root:wazuh /var/ossec/integrations/custom-cyberrange
+  chmod 750 /var/ossec/integrations/custom-cyberrange
+and add to /var/ossec/etc/ossec.conf (see ossec-integration.xml). Wazuh calls it as:
+  custom-cyberrange <alert_file> <api_key> <hook_url>
+<api_key> is the ingest key of a "Wazuh" log source created in Defense Center; <hook_url> is
+http(s)://<cyber-range>/api/v1/soc/ingest. Standard library only; nothing is stored on disk.
+"""
+import json
+import ssl
+import sys
+import urllib.request
+
+
+def main(argv):
+    if len(argv) < 4:
+        print("usage: custom-cyberrange <alert_file> <api_key> <hook_url>", file=sys.stderr)
+        return 2
+    alert_file, key, url = argv[1], argv[2], argv[3]
+    with open(alert_file, encoding="utf-8", errors="replace") as f:
+        alert = json.load(f)
+    body = json.dumps({"records": [alert], "kind": "wazuh"}).encode()
+    req = urllib.request.Request(url, data=body, method="POST", headers={"Content-Type": "application/json", "X-Ingest-Key": key})
+    ctx = ssl.create_default_context()
+    with urllib.request.urlopen(req, timeout=10, context=ctx) as r:  # noqa: S310 - URL is the operator-configured hook
+        return 0 if r.status == 200 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -1,0 +1,50 @@
+# -*- mode: ruby -*-
+# CYBER RANGE Edisi Lokal di dalam sebuah VM (Ubuntu 24.04 + Docker).
+#
+#   cd vm
+#   vagrant up                 # pertama kali: unduh box, pasang Docker, build dan jalankan aplikasi (butuh internet)
+#   buka http://localhost:8080 di browser komputer ini
+#
+# Keamanan:
+# * Port aplikasi hanya diteruskan ke 127.0.0.1 komputer ini (host_ip), tidak ke jaringan LAN.
+# * Tidak ada private/public network tambahan: VM hanya punya adapter NAT Vagrant.
+# * Aplikasi tetap menolak sesi lokal bila Host/Origin bukan localhost.
+# Ubah sumber daya lewat variabel lingkungan: CR_VM_CPUS, CR_VM_MEMORY (MB), CR_VM_PORT, CR_VM_BOX.
+
+CPUS   = Integer(ENV.fetch("CR_VM_CPUS", "4"))
+MEMORY = Integer(ENV.fetch("CR_VM_MEMORY", "8192"))
+PORT   = Integer(ENV.fetch("CR_VM_PORT", "8080"))
+BOX    = ENV.fetch("CR_VM_BOX", "bento/ubuntu-24.04")
+
+Vagrant.configure("2") do |config|
+  config.vm.box = BOX
+  config.vm.hostname = "cyber-range"
+  config.vm.box_check_update = false
+
+  # Aplikasi di VM -> 127.0.0.1:PORT di komputer ini saja.
+  config.vm.network "forwarded_port", guest: 8080, host: PORT, host_ip: "127.0.0.1", id: "cyber-range", auto_correct: true
+
+  # Kode aplikasi (folder di atas vm/) dibaca dari /vagrant-src lalu disalin ke /opt/cyber-range di dalam VM.
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+  config.vm.synced_folder "..", "/vagrant-src"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "cyber-range-lokal"
+    vb.cpus = CPUS
+    vb.memory = MEMORY
+    vb.gui = false
+  end
+  config.vm.provider "libvirt" do |lv|
+    lv.cpus = CPUS
+    lv.memory = MEMORY
+    lv.graphics_ip = "127.0.0.1"
+  end
+  config.vm.provider "hyperv" do |hv|
+    hv.cpus = CPUS
+    hv.memory = MEMORY
+  end
+
+  config.vm.provision "install", type: "shell", path: "install.sh"
+  config.vm.post_up_message = "CYBER RANGE berjalan di VM. Buka http://localhost:#{PORT} di browser komputer ini " \
+                              "(jika port dipindah otomatis, lihat 'vagrant port'). Masuk ke VM: vagrant ssh"
+end

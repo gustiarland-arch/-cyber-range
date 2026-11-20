@@ -1,0 +1,34 @@
+#!/bin/sh
+# Role launcher: /opt/cr/start dc|portal|ws
+set -eu
+ROLE="${1:-ws}"
+mkdir -p /var/log/cr && chmod 0755 /var/log/cr
+touch /var/log/cr/events.jsonl && chmod 0622 /var/log/cr/events.jsonl   # employees may append, only root reads
+DC=$(python3 -c 'import sys; sys.path.insert(0,"/opt/cr"); from common import peers; print((peers().get("dc") or [""])[0])')
+REALM=$(python3 -c 'import sys; sys.path.insert(0,"/opt/cr"); from common import REALM; print(REALM)')
+DOMAIN=$(python3 -c 'import sys; sys.path.insert(0,"/opt/cr"); from common import DOMAIN; print(DOMAIN)')
+if [ "$ROLE" != "dc" ] && [ -n "$DC" ]; then
+  cat > /etc/krb5.conf <<KRB
+[libdefaults]
+	default_realm = $REALM
+	dns_lookup_kdc = false
+	dns_lookup_realm = false
+	rdns = false
+[realms]
+	$REALM = {
+		kdc = $DC
+		admin_server = $DC
+	}
+[domain_realm]
+	.$DOMAIN = $REALM
+	$DOMAIN = $REALM
+KRB
+  printf 'search %s\nnameserver %s\n' "$DOMAIN" "$DC" > /etc/resolv.conf 2>/dev/null || true
+fi
+python3 /opt/cr/agent.py "$ROLE" &
+case "$ROLE" in
+  dc) exec /opt/cr/dc.sh ;;
+  portal) exec python3 /opt/cr/portal.py ;;
+  ws) exec python3 /opt/cr/bot.py ;;
+  *) echo "unknown role $ROLE"; exit 2 ;;
+esac

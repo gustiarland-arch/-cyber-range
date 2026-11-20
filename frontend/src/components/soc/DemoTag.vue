@@ -1,0 +1,1 @@
+<template><span class="rounded border border-fuchsia-400/50 bg-fuchsia-400/10 px-1 font-mono text-[10px] font-semibold tracking-wider text-fuchsia-300" title="Data demonstrasi sintetis, bukan telemetri nyata">DEMO</span></template>

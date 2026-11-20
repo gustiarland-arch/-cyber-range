@@ -1,0 +1,25 @@
+# Optional overlay: real KVM VMs for `vm` topology nodes through the host's libvirtd.
+#   docker compose -f docker-compose.yml -f docker-compose.vm-libvirt.yml --profile lab up -d --build
+# Requirements and the security model are in VM-WINDOWS.md (repo root). Paths are bind-mounted at the SAME location on
+# host and container because libvirtd (on the host) opens the disk files the worker creates.
+x-libvirt-build: &libvirt-build
+  context: ./backend
+  args: { WITH_LIBVIRT: "1" }
+
+services:
+  backend:
+    build: *libvirt-build
+    environment:
+      CR_VM_PROVIDER: libvirt
+    group_add: ["${LIBVIRT_GID:-108}"]
+    volumes:
+      - /var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock
+  lab-worker:
+    build: *libvirt-build
+    environment:
+      CR_VM_PROVIDER: libvirt
+    group_add: ["${DOCKER_GID:-999}", "${LIBVIRT_GID:-108}"]
+    volumes:
+      - /var/run/libvirt/libvirt-sock:/var/run/libvirt/libvirt-sock
+      - /var/lib/cyber-range/vm-images:/var/lib/cyber-range/vm-images:ro
+      - /var/lib/cyber-range/vm-disks:/var/lib/cyber-range/vm-disks

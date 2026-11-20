@@ -1,0 +1,24 @@
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0,<2.2
+alembic>=1.13
+pymysql>=1.1
+cryptography>=42
+pydantic>=2.7
+pydantic-settings>=2.3
+email-validator>=2.1
+argon2-cffi>=23.1
+pyjwt>=2.8
+redis>=5.0
+celery[redis]>=5.4
+packaging>=24
+structlog>=24.1
+pyyaml>=6.0
+docker>=7.1
+httpx==0.28.1  # Proxmox VM adapter (HTTP API)
+yara-python==4.5.4  # YARA signature matching (malware analysis)
+pefile==2024.8.26  # PE header parsing (static analysis only)
+minio==7.2.15  # optional S3-compatible evidence storage
+python-multipart==0.0.31  # multipart uploads (samples, evidence)
+fpdf2==2.8.8  # PDF export of reports (pure Python)
+maxminddb==2.6.2  # optional offline GeoIP lookups (operator-supplied GeoLite2 .mmdb)
